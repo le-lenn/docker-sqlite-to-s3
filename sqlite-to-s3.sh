@@ -2,10 +2,12 @@
 
 set -e
 
+# Enable shell aliases in this non-interactive script
 shopt -s expand_aliases
 
 # Check and set missing environment vars
 : ${S3_BUCKET:?"S3_BUCKET env variable is required"}
+: ${DATABASE_PATH:?"DATABASE_PATH env variable is required"}
 if [[ -z ${S3_KEY_PREFIX} ]]; then
   export S3_KEY_PREFIX=""
 else
@@ -15,18 +17,24 @@ else
 fi
 echo $S3_KEY_PREFIX
 
+# Optional S3-compatible endpoint override for awscli
 if [[ -n ${ENDPOINT_URL} ]]; then
   alias aws="aws --endpoint-url ${ENDPOINT_URL}"
 fi
 
-export DATABASE_PATH=${DATABASE_PATH:-/data/sqlite3.db}
 export BACKUP_PATH=${BACKUP_PATH:-${DATABASE_PATH}.bak}
 export DATETIME=$(date "+%Y%m%d%H%M%S")
+# Backup/restore busy timeout in milliseconds (SQLite expects ms)
+export SQLITE_TIMEOUT_MS=${SQLITE_TIMEOUT_MS:-10000}
 
 # Add this script to the crontab and start crond
 cron() {
-  echo "Starting backup cron job with frequency '$1'"
-  echo "$1 $0 backup" > /var/spool/cron/crontabs/root
+  if [[ -z "${CRON_SCHEDULE}" ]]; then
+    echo "CRON_SCHEDULE env variable is required for cron mode"
+    exit 1
+  fi
+  echo "Starting backup cron job with frequency '${CRON_SCHEDULE}'"
+  echo "${CRON_SCHEDULE} $0 backup" > /var/spool/cron/crontabs/root
   crond -f
 }
 
@@ -34,8 +42,14 @@ cron() {
 backup() {
   # Dump database to file
   echo "Backing up $DATABASE_PATH to $BACKUP_PATH"
-  sqlite3 $DATABASE_PATH .dump > $BACKUP_PATH
-  if [ $? -ne 0 ]; then
+  # Use online backup API for hot backup while DB is running
+  if sqlite3 "$DATABASE_PATH" <<SQL
+.timeout ${SQLITE_TIMEOUT_MS}
+.backup '$BACKUP_PATH'
+SQL
+  then
+    :
+  else
     echo "Failed to backup $DATABASE_PATH to $BACKUP_PATH"
     exit 1
   fi
@@ -58,6 +72,16 @@ backup() {
   else
     echo "Failed to create timestamped backup"
     exit 1
+  fi
+
+  # Optionally trigger a webhook on successful backup
+  if [[ -n "${POST_WEBHOOK}" ]]; then
+    echo "Triggering POST webhook: ${POST_WEBHOOK}"
+    if curl -fsSL -X POST "${POST_WEBHOOK}" >/dev/null 2>&1; then
+      echo "Webhook triggered successfully"
+    else
+      echo "Webhook trigger failed"
+    fi
   fi
 
   echo "Done"
@@ -85,7 +109,12 @@ restore() {
     echo "Moving out of date database aside"
     mv $DATABASE_PATH ${DATABASE_PATH}.old
   fi
-  if sqlite3 $DATABASE_PATH < $BACKUP_PATH; then
+  # Use restore via online backup API
+  if sqlite3 "$DATABASE_PATH" <<SQL
+.timeout ${SQLITE_TIMEOUT_MS}
+.restore '$BACKUP_PATH'
+SQL
+  then
     echo "Successfully restored"
     if [ -e ${DATABASE_PATH}.old ]; then
       echo "Cleaning up out of date database"
@@ -106,7 +135,7 @@ restore() {
 # Handle command line arguments
 case "$1" in
   "cron")
-    cron "$2"
+    cron
     ;;
   "backup")
     backup
@@ -116,5 +145,6 @@ case "$1" in
     ;;
   *)
     echo "Invalid command '$@'"
-    echo "Usage: $0 {backup|restore|cron <pattern>}"
+    echo "Usage: $0 {backup|restore|cron}"
+    echo "       cron requires CRON_SCHEDULE env var (e.g. \"0 1 * * *\")"
 esac

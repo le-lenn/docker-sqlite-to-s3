@@ -1,19 +1,23 @@
-# Docker SQLite to S3  [![](https://images.microbadger.com/badges/version/jacobtomlinson/sqlite-to-s3.svg)](https://microbadger.com/images/jacobtomlinson/sqlite-to-s3 "Get your own version badge on microbadger.com") [![](https://images.microbadger.com/badges/image/jacobtomlinson/sqlite-to-s3.svg)](https://microbadger.com/images/jacobtomlinson/sqlite-to-s3 "Get your own image badge on microbadger.com")
+# Docker SQLite to S3
+
+Image: `ghcr.io/le-lenn/docker-sqlite-to-s3`
 
 This container periodically runs a backup of a SQLite database to an S3 bucket. It also has the ability to restore.
 
 ## Usage
 
-### Default cron (1am daily)
+### Scheduled cron (example: 1am daily)
 
 ```shell
 docker run \
     -v /path/to/database.db:/data/sqlite3.db \
+    -e DATABASE_PATH=/data/sqlite3.db \
+    -e CRON_SCHEDULE="0 1 * * *" \
     -e S3_BUCKET=mybackupbucket \
     -e AWS_ACCESS_KEY_ID=AKIAIOSFODNN7EXAMPLE \
     -e AWS_SECRET_ACCESS_KEY=wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY \
     -e AWS_DEFAULT_REGION=us-west-2 \
-    jacobtomlinson/sqlite-to-s3:latest
+    ghcr.io/le-lenn/docker-sqlite-to-s3:latest cron
 ```
 
 ### Custom cron timing
@@ -21,12 +25,13 @@ docker run \
 ```shell
 docker run \
     -v /path/to/database.db:/data/sqlite3.db \
+    -e DATABASE_PATH=/data/sqlite3.db \
+    -e CRON_SCHEDULE="* * * * *" \
     -e S3_BUCKET=mybackupbucket \
     -e AWS_ACCESS_KEY_ID=AKIAIOSFODNN7EXAMPLE \
     -e AWS_SECRET_ACCESS_KEY=wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY \
     -e AWS_DEFAULT_REGION=us-west-2 \
-    jacobtomlinson/sqlite-to-s3:latest \
-    cron "* * * * *"
+    ghcr.io/le-lenn/docker-sqlite-to-s3:latest cron
 ```
 
 ### Custom s3 endpoint
@@ -48,11 +53,12 @@ docker run \
 ```shell
 docker run \
     -v /path/to/database.db:/data/sqlite3.db \
+    -e DATABASE_PATH=/data/sqlite3.db \
     -e S3_BUCKET=mybackupbucket \
     -e AWS_ACCESS_KEY_ID=AKIAIOSFODNN7EXAMPLE \
     -e AWS_SECRET_ACCESS_KEY=wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY \
     -e AWS_DEFAULT_REGION=us-west-2 \
-    jacobtomlinson/sqlite-to-s3:latest \
+    ghcr.io/le-lenn/docker-sqlite-to-s3:latest \
     backup
 ```
 
@@ -61,11 +67,12 @@ docker run \
 ```shell
 docker run \
     -v /path/to/database.db:/data/sqlite3.db \
+    -e DATABASE_PATH=/data/sqlite3.db \
     -e S3_BUCKET=mybackupbucket \
     -e AWS_ACCESS_KEY_ID=AKIAIOSFODNN7EXAMPLE \
     -e AWS_SECRET_ACCESS_KEY=wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY \
     -e AWS_DEFAULT_REGION=us-west-2 \
-    jacobtomlinson/sqlite-to-s3:latest \
+    ghcr.io/le-lenn/docker-sqlite-to-s3:latest \
     restore
 ```
 
@@ -78,6 +85,102 @@ docker run \
 | `AWS_ACCESS_KEY_ID`       | AWS Access key | `AKIAIO...` | None      | Yes (if using instance role) |
 | `AWS_SECRET_ACCESS_KEY`   |  AWS Secret Key |  `wJalrXUtnFE...` | None   | Yes (if using instance role) |
 | `AWS_DEFAULT_REGION`   | AWS Default Region | `us-west-2`    | `us-west-1`   | Yes |
-| `DATABASE_PATH` | Path of database to be backed up (within the container)   | `/myvolume/mydb.db` | `/data/sqlite3.db`   | Yes |
+| `DATABASE_PATH` | Path of database to be backed up (within the container)   | `/myvolume/mydb.db` | None   | No |
 | `BACKUP_PATH` | Path to write the backup (within the container)  | `/myvolume/mybackup.db` | `${DATABASE_PATH}.bak`   | Yes |
-| `ENDPOINT_URL` | Url to the s3 service endpoint  | `https://play.minio.com:9000` | None   | Yes |
+| `ENDPOINT_URL` | URL to S3-compatible endpoint (MinIO, Cloudflare R2, Wasabi) | `https://play.minio.com:9000` | None | Yes |
+| `SQLITE_TIMEOUT_MS` | Busy timeout used by SQLite `.backup`/`.restore` (milliseconds) | `10000` | `10000` | Yes |
+| `CRON_SCHEDULE` | Cron expression for scheduled backups (cron mode only) | `0 1 * * *` | None | No (required for cron) |
+| `POST_WEBHOOK` | URL to call with a POST after successful backup | `https://example.com/hook` | None | Yes |
+
+## Docker Compose
+
+You can run this container as a sidecar alongside your application and have it back up the SQLite database on a schedule, and trigger restores when needed.
+
+### Backup sidecar (scheduled cron)
+
+```yaml
+
+volumes:
+  app-data:
+
+services:
+  app:
+    image: your-app-image:latest
+    # Ensure your app writes its SQLite DB to /data/sqlite3.db
+    volumes:
+      - app-data:/data
+
+  sqlite-backup:
+    image: ghcr.io/le-lenn/docker-sqlite-to-s3:latest
+    # Mount the same volume as the app, read-only is sufficient for backup
+    volumes:
+      - app-data:/data:ro
+    environment:
+      DATABASE_PATH: /data/sqlite3.db
+      CRON_SCHEDULE: "0 1 * * *"
+      S3_BUCKET: your-bucket
+      S3_KEY_PREFIX: backups/sqlite/
+      AWS_ACCESS_KEY_ID: your-access-key
+      AWS_SECRET_ACCESS_KEY: your-secret-key
+      AWS_DEFAULT_REGION: us-west-2
+      # Optional: if using an S3-compatible provider (MinIO, Cloudflare R2, Wasabi)
+      # ENDPOINT_URL: https://your-provider-endpoint
+      # Optional: tune backup/restore busy timeout (ms), default 10000
+      # SQLITE_TIMEOUT_MS: 10000
+      # Optional: notify another service when a backup completes
+      # POST_WEBHOOK: https://example.com/myhook
+      # Optional: set if your DB is not at the default path
+      # DATABASE_PATH: /data/yourdb.sqlite
+    # Run on a daily schedule at 1am (controlled via CRON_SCHEDULE)
+    command: ["cron"]
+    restart: unless-stopped
+    depends_on:
+      - app
+```
+
+### Restore (one-off)
+
+Stop your application first to avoid SQLite locks, then run a one-off restore using Compose:
+
+```yaml
+volumes:
+  app-data:
+
+services:
+  # ... your app and sqlite-backup services from above ...
+
+  sqlite-restore:
+    image: ghcr.io/le-lenn/docker-sqlite-to-s3:latest
+    volumes:
+      - app-data:/data
+    environment:
+      DATABASE_PATH: /data/sqlite3.db
+      S3_BUCKET: your-bucket
+      S3_KEY_PREFIX: backups/sqlite/
+      AWS_ACCESS_KEY_ID: your-access-key
+      AWS_SECRET_ACCESS_KEY: your-secret-key
+      AWS_DEFAULT_REGION: us-west-2
+      # ENDPOINT_URL: https://your-provider-endpoint
+      # DATABASE_PATH: /data/yourdb.sqlite
+      # SQLITE_TIMEOUT_MS: 10000
+    command: ["restore"]
+    restart: "no"
+    profiles: ["restore"]
+```
+
+Run the restore when needed:
+
+```shell
+docker compose --profile restore run --rm sqlite-restore
+```
+
+Notes:
+
+- Ensure the database file path inside the containers matches `DATABASE_PATH` (this variable is required).
+- The backup sidecar writes `latest.bak` and timestamped `.bak` copies to your S3 bucket under `S3_KEY_PREFIX`.
+- For S3-compatible providers, set `ENDPOINT_URL` so the `aws` CLI targets the correct endpoint.
+
+## Backup approach
+
+- This image uses `sqlite3` `.backup` and `.restore` commands which leverage SQLite's online backup API, allowing consistent backups while the database is running.
+- `.dump` creates SQL text dumps and is not ideal for hot backups; `.backup` produces a binary snapshot of the database file and is more reliable under concurrent writes.
