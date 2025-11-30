@@ -75,9 +75,9 @@ SQL
   fi
 
   # Optionally trigger a webhook on successful backup
-  if [[ -n "${POST_WEBHOOK}" ]]; then
-    echo "Triggering POST webhook: ${POST_WEBHOOK}"
-    if curl -fsSL -X POST "${POST_WEBHOOK}" >/dev/null 2>&1; then
+  if [[ -n "${POST_WEBHOOK_URL}" ]]; then
+    echo "Triggering POST webhook: ${POST_WEBHOOK_URL}"
+    if curl -fsSL -X POST "${POST_WEBHOOK_URL}" >/dev/null 2>&1; then
       echo "Webhook triggered successfully"
     else
       echo "Webhook trigger failed"
@@ -89,17 +89,35 @@ SQL
 
 # Pull down the latest backup from S3 and restore it to the database
 restore() {
+  # Resolve which object to restore (timestamp or "latest")
+  local input_ts="$1"
+  local ts=""
+  local object_key=""
+  if [[ -n "${RESTORE_TIMESTAMP}" ]]; then
+    ts="${RESTORE_TIMESTAMP}"
+  elif [[ -n "${input_ts}" ]]; then
+    ts="${input_ts}"
+  else
+    ts="latest"
+  fi
+
+  if [[ "${ts}" == "latest" ]]; then
+    object_key="${S3_KEY_PREFIX}latest.bak"
+  else
+    object_key="${S3_KEY_PREFIX}${ts}.bak"
+  fi
+
   # Remove old backup file
   if [ -e $BACKUP_PATH ]; then
     echo "Removing out of date backup"
     rm $BACKUP_PATH
   fi
   # Get backup file from S3
-  echo "Downloading latest backup from S3"
-  if aws s3 cp s3://${S3_BUCKET}/${S3_KEY_PREFIX}latest.bak $BACKUP_PATH; then
+  echo "Downloading backup from s3://${S3_BUCKET}/${object_key}"
+  if aws s3 cp s3://${S3_BUCKET}/${object_key} $BACKUP_PATH; then
     echo "Downloaded"
   else
-    echo "Failed to download latest backup"
+    echo "Failed to download backup 's3://${S3_BUCKET}/${object_key}'"
     exit 1
   fi
 
@@ -141,10 +159,12 @@ case "$1" in
     backup
     ;;
   "restore")
-    restore
+    restore "$2"
     ;;
   *)
     echo "Invalid command '$@'"
-    echo "Usage: $0 {backup|restore|cron}"
+    echo "Usage: $0 {backup|restore [latest|TIMESTAMP]|cron}"
     echo "       cron requires CRON_SCHEDULE env var (e.g. \"0 1 * * *\")"
+    echo "       restore optionally accepts a timestamp (YYYYMMDDHHMMSS) or 'latest'."
+    echo "       You can also set RESTORE_TIMESTAMP env var to a timestamp."
 esac

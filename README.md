@@ -39,13 +39,14 @@ docker run \
 ```shell
 docker run \
     -v /path/to/database.db:/data/sqlite3.db \
+    -e DATABASE_PATH=/data/sqlite3.db \
+    -e CRON_SCHEDULE="* * * * *" \
     -e S3_BUCKET=mybackupbucket \
     -e AWS_ACCESS_KEY_ID=AKIAIOSFODNN7EXAMPLE \
     -e AWS_SECRET_ACCESS_KEY=wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY \
     -e AWS_DEFAULT_REGION=us-east-1 \
     -e ENDPOINT_URL=https://play.minio.com:9000 \
-    jacobtomlinson/sqlite-to-s3:latest \
-    cron "* * * * *"
+    ghcr.io/le-lenn/docker-sqlite-to-s3:latest cron
 ```
 
 ### Run backup
@@ -76,6 +77,27 @@ docker run \
     restore
 ```
 
+Restore a specific backup by timestamp:
+
+```shell
+# Restore by timestamp (YYYYMMDDHHMMSS) -> resolves to <S3_KEY_PREFIX><timestamp>.bak
+docker run \
+    -v /path/to/database.db:/data/sqlite3.db \
+    -e DATABASE_PATH=/data/sqlite3.db \
+    -e S3_BUCKET=mybackupbucket \
+    ghcr.io/le-lenn/docker-sqlite-to-s3:latest \
+    restore 20250101120000
+
+# Or set RESTORE_TIMESTAMP env variable instead of passing an argument
+docker run \
+    -v /path/to/database.db:/data/sqlite3.db \
+    -e DATABASE_PATH=/data/sqlite3.db \
+    -e S3_BUCKET=mybackupbucket \
+    -e RESTORE_TIMESTAMP=20250101120000 \
+    ghcr.io/le-lenn/docker-sqlite-to-s3:latest \
+    restore
+```
+
 ## Environment Variables
 
 | Variable        | Description      | Example Usage  | Default   | Optional?  |
@@ -91,6 +113,7 @@ docker run \
 | `SQLITE_TIMEOUT_MS` | Busy timeout used by SQLite `.backup`/`.restore` (milliseconds) | `10000` | `10000` | Yes |
 | `CRON_SCHEDULE` | Cron expression for scheduled backups (cron mode only) | `0 1 * * *` | None | No (required for cron) |
 | `POST_WEBHOOK` | URL to call with a POST after successful backup | `https://example.com/hook` | None | Yes |
+| `RESTORE_TIMESTAMP` | Timestamp to restore (overrides "latest") | `20250101120000` | None | Yes |
 
 ## Docker Compose
 
@@ -163,7 +186,10 @@ services:
       # ENDPOINT_URL: https://your-provider-endpoint
       # DATABASE_PATH: /data/yourdb.sqlite
       # SQLITE_TIMEOUT_MS: 10000
-    command: ["restore"]
+      # Optionally pin a specific backup timestamp instead of latest
+      # RESTORE_TIMESTAMP: 20250101120000
+    # Use a timestamp argument, or rely on RESTORE_TIMESTAMP above
+    command: ["restore", "latest"]
     restart: "no"
     profiles: ["restore"]
 ```

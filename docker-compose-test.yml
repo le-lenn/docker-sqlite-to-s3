@@ -1,0 +1,99 @@
+---
+volumes:
+  readeck-data:
+  minio-data:
+
+services:
+  app:
+    image: codeberg.org/readeck/readeck:0.21.3
+    container_name: readeck
+    ports:
+      - 8000:8000
+    environment:
+      # Defines the application log level. Can be error, warn, info, debug.
+      READECK_LOG_LEVEL: info
+      # The IP address on which Readeck listens.
+      READECK_SERVER_HOST: "0.0.0.0"
+      # The TCP port on which Readeck listens. Update container port above to match (right of colon).
+      READECK_SERVER_PORT: 8000
+      # Easier to read log format
+      READECK_LOG_FORMAT: text
+      # Optional, the URL prefix of Readeck.
+      # READECK_SERVER_PREFIX: "/"
+    volumes:
+      - readeck-data:/readeck
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "/bin/readeck", "healthcheck", "-config", "config.toml"]
+      interval: 30s
+      timeout: 2s
+      retries: 3
+
+
+  sqlite-backup:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: le-lenn/sqlite-to-s3:local
+    # Mount the same volume as the app, read-only is sufficient for backup
+    volumes:
+      - readeck-data:/readeck:ro
+    environment:
+      # Absolute path inside the shared volume where the app stores the DB
+      DATABASE_PATH: /readeck/data/db.sqlite3
+      # Write the temporary backup file into /tmp inside the container (writable)
+      BACKUP_PATH: /tmp/db.sqlite3.bak
+      CRON_SCHEDULE: "* * * * *"
+      # S3 (or S3-compatible) target. When using the bundled MinIO service
+      # we default to this bucket name. IMPORTANT: the bucket MUST exist
+      # before running backups. See the `minio` service below for manual
+      # creation instructions (MinIO Console or `mc`).
+      S3_BUCKET: readeck-backups
+      S3_KEY_PREFIX: backups/sqlite/
+      # Use the MinIO credentials defined below so this service works
+      # out-of-the-box when you run docker compose up
+      AWS_ACCESS_KEY_ID: minioadmin
+      AWS_SECRET_ACCESS_KEY: minioadmin
+      # Tell awscli to use the local MinIO endpoint so uploads go to the
+      # MinIO server in this Compose stack.
+      ENDPOINT_URL: http://minio:9000
+      AWS_DEFAULT_REGION: us-west-2
+      # Optional: if using an S3-compatible provider (MinIO, Cloudflare R2, Wasabi)
+      # ENDPOINT_URL: https://your-provider-endpoint
+      # Optional: tune backup/restore busy timeout (ms), default 10000
+      # SQLITE_TIMEOUT_MS: 10000
+      # Optional: notify another service when a backup completes
+      POST_WEBHOOK_URL: ${POST_WEBHOOK_URL}
+      # Optional: set if your DB is not at the default path
+    command: ["cron"]
+    restart: unless-stopped
+    depends_on:
+      - app
+      - minio
+
+  minio:
+      command: 'server /data --console-address ":9001"'
+      image: minio/minio
+      ports:
+          - '9001:9001'
+          - '9000:9000'
+      environment:
+          MINIO_ROOT_USER: minioadmin
+          MINIO_ROOT_PASSWORD: minioadmin
+      volumes:
+          - minio-data:/data
+      healthcheck:
+        test: ["CMD", "curl", "-fsS", "http://127.0.0.1:9000/minio/health/ready"]
+        interval: 10s
+        timeout: 2s
+        retries: 6
+      restart: unless-stopped
+
+      # Create the backup bucket on MinIO using the `mc` client
+  minio-mc:
+    image: minio/mc:latest
+    depends_on:
+      - minio
+    entrypoint: ["sh", "-c"]
+    command: ["mc alias set minio http://minio:9000 minioadmin minioadmin && until mc ls minio >/dev/null 2>&1; do echo waiting for minio; sleep 1; done && mc mb minio/readeck-backups"]
+    restart: "no"
