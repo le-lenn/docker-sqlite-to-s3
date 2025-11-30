@@ -64,11 +64,39 @@ services:
       # SQLITE_TIMEOUT_MS: 10000
       # Optional: notify another service when a backup completes
       POST_WEBHOOK_URL: ${POST_WEBHOOK_URL}
-      # Optional: set if your DB is not at the default path
     command: ["cron"]
     restart: unless-stopped
     depends_on:
-      - app
+      - minio
+
+  sqlite-restore:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: le-lenn/sqlite-to-s3:local
+    # Mount the same volume as the app, read-write is necessary for restore
+    volumes:
+      - readeck-data:/readeck:rw
+    environment:
+      # Absolute path inside the shared volume where the app stores the DB
+      DATABASE_PATH: /readeck/data/db.sqlite3
+      S3_BUCKET: readeck-backups
+      S3_KEY_PREFIX: backups/sqlite/
+      # Use the MinIO credentials defined below so this service works
+      # out-of-the-box when you run docker compose up
+      AWS_ACCESS_KEY_ID: minioadmin
+      AWS_SECRET_ACCESS_KEY: minioadmin
+      # Tell awscli to use the local MinIO endpoint so uploads go to the
+      # MinIO server in this Compose stack.
+      ENDPOINT_URL: http://minio:9000
+      AWS_DEFAULT_REGION: us-west-2
+      # Optional: if using an S3-compatible provider (MinIO, Cloudflare R2, Wasabi)
+      # ENDPOINT_URL: https://your-provider-endpoint
+      # Optional: tune backup/restore busy timeout (ms), default 10000
+      # SQLITE_TIMEOUT_MS: 10000
+    command: ["restore", "20251130112400"]
+    restart: no
+    depends_on:
       - minio
 
   minio:

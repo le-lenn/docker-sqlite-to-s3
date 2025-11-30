@@ -93,9 +93,7 @@ restore() {
   local input_ts="$1"
   local ts=""
   local object_key=""
-  if [[ -n "${RESTORE_TIMESTAMP}" ]]; then
-    ts="${RESTORE_TIMESTAMP}"
-  elif [[ -n "${input_ts}" ]]; then
+  if [[ -n "${input_ts}" ]]; then
     ts="${input_ts}"
   else
     ts="latest"
@@ -166,5 +164,4 @@ case "$1" in
     echo "Usage: $0 {backup|restore [latest|TIMESTAMP]|cron}"
     echo "       cron requires CRON_SCHEDULE env var (e.g. \"0 1 * * *\")"
     echo "       restore optionally accepts a timestamp (YYYYMMDDHHMMSS) or 'latest'."
-    echo "       You can also set RESTORE_TIMESTAMP env var to a timestamp."
 esac

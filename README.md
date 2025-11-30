@@ -65,6 +65,8 @@ docker run \
 
 ### Restore
 
+Restore to lastest backup:
+
 ```shell
 docker run \
     -v /path/to/database.db:/data/sqlite3.db \
@@ -88,14 +90,6 @@ docker run \
     ghcr.io/le-lenn/docker-sqlite-to-s3:latest \
     restore 20250101120000
 
-# Or set RESTORE_TIMESTAMP env variable instead of passing an argument
-docker run \
-    -v /path/to/database.db:/data/sqlite3.db \
-    -e DATABASE_PATH=/data/sqlite3.db \
-    -e S3_BUCKET=mybackupbucket \
-    -e RESTORE_TIMESTAMP=20250101120000 \
-    ghcr.io/le-lenn/docker-sqlite-to-s3:latest \
-    restore
 ```
 
 ## Environment Variables
@@ -112,8 +106,8 @@ docker run \
 | `ENDPOINT_URL` | URL to S3-compatible endpoint (MinIO, Cloudflare R2, Wasabi) | `https://play.minio.com:9000` | None | Yes |
 | `SQLITE_TIMEOUT_MS` | Busy timeout used by SQLite `.backup`/`.restore` (milliseconds) | `10000` | `10000` | Yes |
 | `CRON_SCHEDULE` | Cron expression for scheduled backups (cron mode only) | `0 1 * * *` | None | No (required for cron) |
-| `POST_WEBHOOK` | URL to call with a POST after successful backup | `https://example.com/hook` | None | Yes |
-| `RESTORE_TIMESTAMP` | Timestamp to restore (overrides "latest") | `20250101120000` | None | Yes |
+| `POST_WEBHOOK_URL` | URL to call with a POST after successful backup | `https://example.com/hook` | None | Yes |
+
 
 ## Docker Compose
 
@@ -151,7 +145,7 @@ services:
       # Optional: tune backup/restore busy timeout (ms), default 10000
       # SQLITE_TIMEOUT_MS: 10000
       # Optional: notify another service when a backup completes
-      # POST_WEBHOOK: https://example.com/myhook
+      # POST_WEBHOOK_URL: https://example.com/myhook
       # Optional: set if your DB is not at the default path
       # DATABASE_PATH: /data/yourdb.sqlite
     # Run on a daily schedule at 1am (controlled via CRON_SCHEDULE)
@@ -163,14 +157,14 @@ services:
 
 ### Restore (one-off)
 
-Stop your application first to avoid SQLite locks, then run a one-off restore using Compose:
+Ensure your application is not started while restoring (either stop it or only start selected services), then run a one-off restore using Compose:
 
 ```yaml
 volumes:
   app-data:
 
 services:
-  # ... your app and sqlite-backup services from above ...
+  # ... your app and sqlite-backup services from above, but commented out ro not selected ...
 
   sqlite-restore:
     image: ghcr.io/le-lenn/docker-sqlite-to-s3:latest
@@ -186,27 +180,18 @@ services:
       # ENDPOINT_URL: https://your-provider-endpoint
       # DATABASE_PATH: /data/yourdb.sqlite
       # SQLITE_TIMEOUT_MS: 10000
-      # Optionally pin a specific backup timestamp instead of latest
-      # RESTORE_TIMESTAMP: 20250101120000
-    # Use a timestamp argument, or rely on RESTORE_TIMESTAMP above
+    # Use a timestamp argument or 'latest'
     command: ["restore", "latest"]
     restart: "no"
     profiles: ["restore"]
 ```
 
-Run the restore when needed:
-
-```shell
-docker compose --profile restore run --rm sqlite-restore
-```
-
 Notes:
 
-- Ensure the database file path inside the containers matches `DATABASE_PATH` (this variable is required).
-- The backup sidecar writes `latest.bak` and timestamped `.bak` copies to your S3 bucket under `S3_KEY_PREFIX`.
-- For S3-compatible providers, set `ENDPOINT_URL` so the `aws` CLI targets the correct endpoint.
+- Ensure the database file path inside the containers matches `DATABASE_PATH`
 
-## Backup approach
 
-- This image uses `sqlite3` `.backup` and `.restore` commands which leverage SQLite's online backup API, allowing consistent backups while the database is running.
-- `.dump` creates SQL text dumps and is not ideal for hot backups; `.backup` produces a binary snapshot of the database file and is more reliable under concurrent writes.
+## Gotchas
+
+- Read-only volume during restore: For restores you must mount the shared volume read-write. Example difference: backup sidecar can use `:ro`, restore service must not.
+- App running during restore: If the app is up it may keep SQLite files open and block `.restore`. Do not start the app when restoring.
