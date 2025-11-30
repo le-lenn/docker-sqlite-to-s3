@@ -5,86 +5,6 @@ SQLite backup utility which backups your sqlite to S3. All configurable via envi
 
 ## Usage
 
-### Scheduled cron (example: 1am daily)
-
-```shell
-docker run \
-    -v /path/to/database.db:/data/sqlite3.db \
-    -e DATABASE_PATH=/data/sqlite3.db \
-    -e CRON_SCHEDULE="0 1 * * *" \
-    -e S3_BUCKET=mybackupbucket \
-    # Optional: encrypt backups before upload
-    # -e ENCRYPTION_KEY=your-strong-passphrase \
-    -e AWS_ACCESS_KEY_ID=AKIAIOSFODNN7EXAMPLE \
-    -e AWS_SECRET_ACCESS_KEY=wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY \
-    -e AWS_DEFAULT_REGION=us-west-2 \
-    ghcr.io/le-lenn/docker-sqlite-to-s3:latest cron
-```
-
-### Custom s3 endpoint
-
-```shell
-docker run \
-    -v /path/to/database.db:/data/sqlite3.db \
-    -e DATABASE_PATH=/data/sqlite3.db \
-    -e CRON_SCHEDULE="* * * * *" \
-    -e S3_BUCKET=mybackupbucket \
-    # Optional: encrypt backups before upload
-    # -e ENCRYPTION_KEY=your-strong-passphrase \
-    -e AWS_ACCESS_KEY_ID=AKIAIOSFODNN7EXAMPLE \
-    -e AWS_SECRET_ACCESS_KEY=wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY \
-    -e AWS_DEFAULT_REGION=us-east-1 \
-    -e ENDPOINT_URL=https://play.minio.com:9000 \
-    ghcr.io/le-lenn/docker-sqlite-to-s3:latest cron
-```
-
-### Run backup
-
-```shell
-docker run \
-    -v /path/to/database.db:/data/sqlite3.db \
-    -e DATABASE_PATH=/data/sqlite3.db \
-    -e S3_BUCKET=mybackupbucket \
-    # Optional: encrypt backups before upload
-    # -e ENCRYPTION_KEY=your-strong-passphrase \
-    -e AWS_ACCESS_KEY_ID=AKIAIOSFODNN7EXAMPLE \
-    -e AWS_SECRET_ACCESS_KEY=wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY \
-    -e AWS_DEFAULT_REGION=us-west-2 \
-    ghcr.io/le-lenn/docker-sqlite-to-s3:latest \
-    backup
-```
-
-### Restore
-
-Restore to lastest backup:
-
-```shell
-docker run \
-    -v /path/to/database.db:/data/sqlite3.db \
-    -e DATABASE_PATH=/data/sqlite3.db \
-    -e S3_BUCKET=mybackupbucket \
-    # If backups are encrypted, you must set the same key here
-    # -e ENCRYPTION_KEY=your-strong-passphrase \
-    -e AWS_ACCESS_KEY_ID=AKIAIOSFODNN7EXAMPLE \
-    -e AWS_SECRET_ACCESS_KEY=wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY \
-    -e AWS_DEFAULT_REGION=us-west-2 \
-    ghcr.io/le-lenn/docker-sqlite-to-s3:latest \
-    restore
-```
-
-Restore a specific backup by timestamp:
-
-```shell
-# Restore by timestamp (YYYYMMDDHHMMSS) -> resolves to <S3_KEY_PREFIX><timestamp>.bak
-docker run \
-    -v /path/to/database.db:/data/sqlite3.db \
-    -e DATABASE_PATH=/data/sqlite3.db \
-    -e S3_BUCKET=mybackupbucket \
-    ghcr.io/le-lenn/docker-sqlite-to-s3:latest \
-    restore 20250101120000
-
-```
-
 ## Environment Variables
 
 | Variable        | Description      | Example Usage  | Default   | Required |
@@ -184,13 +104,9 @@ services:
     profiles: ["restore"]
 ```
 
-Notes:
-
-- Ensure the database file path inside the containers matches `DATABASE_PATH`
-
-
 ## Gotchas
 
 - Read-only volume during restore: For restores you must mount the shared volume read-write. Example difference: backup sidecar can use `:ro`, restore service must not.
 - App running during restore: If the app is up it may keep SQLite files open and block `.restore`. Do not start the app when restoring.
 - Encrypted backups: When `ENCRYPTION_KEY` is set, backups are encrypted before upload. To restore an encrypted backup you must provide the same `ENCRYPTION_KEY`; otherwise restore fails with an explanatory error.
+- Ensure the database file path inside the containers matches `DATABASE_PATH`
