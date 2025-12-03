@@ -1,0 +1,76 @@
+#! /bin/sh
+
+set -u
+set -o pipefail
+
+DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+. "$DIR/env.sh"
+
+s3_uri_base="s3://${S3_BUCKET}/${S3_PREFIX}"
+
+# Determine which object to restore: explicit timestamp or find the latest
+file_key=""
+if [ $# -ge 1 ] && [ -n "$1" ]; then
+  ts="$1"
+  file_key="${ts}.bak"
+else
+  echo "Finding latest backup in $s3_uri_base..."
+  # List objects under the prefix, sort and pick the last (newest)
+  file_key=$(aws $aws_args s3 ls "$s3_uri_base" \
+    | awk '{print $4}' \
+    | grep -E '\.bak$' \
+    | sort \
+    | tail -n 1)
+  if [ -z "$file_key" ]; then
+    echo "No backups found under $s3_uri_base"
+    exit 1
+  fi
+fi
+
+echo "Fetching backup from S3: ${s3_uri_base}${file_key}"
+
+tmp_file="${BACKUP_PATH}"
+rm -f "$tmp_file" "$tmp_file.decrypted" 2>/dev/null || true
+
+aws $aws_args s3 cp "${s3_uri_base}${file_key}" "$tmp_file"
+
+# If the file is encrypted (OpenSSL salted), require ENCRYPTION_KEY and decrypt
+RESTORE_SOURCE="$tmp_file"
+if is_encrypted_file "$tmp_file"; then
+  echo "Downloaded backup appears to be encrypted."
+  if [ -z "${ENCRYPTION_KEY:-}" ]; then
+    echo "Error: ENCRYPTION_KEY must be set to restore encrypted backups."
+    exit 1
+  fi
+  if openssl enc -d -aes-256-cbc -pbkdf2 -iter 100000 -pass env:ENCRYPTION_KEY -in "$tmp_file" -out "${tmp_file}.decrypted"; then
+    RESTORE_SOURCE="${tmp_file}.decrypted"
+  else
+    echo "Decryption failed"
+    exit 1
+  fi
+fi
+
+echo "Restoring database at $DATABASE_PATH ..."
+
+# Move current DB aside and remove SHM/WAL if present
+[ -e "$DATABASE_PATH" ] && mv "$DATABASE_PATH" "${DATABASE_PATH}.old" || true
+rm -f "${DATABASE_PATH}-wal" "${DATABASE_PATH}-shm" 2>/dev/null || true
+
+if sqlite3 "$DATABASE_PATH" <<SQL
+.timeout ${SQLITE_TIMEOUT_MS}
+.restore '$RESTORE_SOURCE'
+SQL
+then
+  echo "Restore complete."
+  rm -f "${DATABASE_PATH}.old" 2>/dev/null || true
+  rm -f "$tmp_file" "${tmp_file}.decrypted" 2>/dev/null || true
+else
+  echo "Restore failed"
+  if [ -e "${DATABASE_PATH}.old" ]; then
+    echo "Reverting to previous database file."
+    mv "${DATABASE_PATH}.old" "$DATABASE_PATH"
+  fi
+  rm -f "$tmp_file" "${tmp_file}.decrypted" 2>/dev/null || true
+  exit 1
+fi
+

@@ -1,8 +1,15 @@
-FROM alpine:3.22.2
+FROM alpine:3.23
 
-RUN apk add --no-cache bash curl ca-certificates sqlite aws-cli openssl
+ARG TARGETARCH
 
-COPY sqlite-to-s3.sh /usr/bin/sqlite-to-s3
+# Install runtime dependencies and go-cron via a dedicated installer
+COPY src/install.sh /usr/src/install.sh
+RUN sh /usr/src/install.sh
 
-ENTRYPOINT ["/usr/bin/sqlite-to-s3"]
-CMD ["cron"]
+# Copy the application scripts
+COPY src /usr/src
+
+WORKDIR /usr/src
+RUN chmod +x /usr/src/*.sh
+ENTRYPOINT ["/usr/src/run.sh"]
+CMD [""]
