@@ -21,7 +21,7 @@ SQLite backup utility which backups your sqlite to S3. All configurable via envi
 | `SCHEDULE` | Cron expression for scheduled backups | `0 1 * * *` | None | No (runs immediately if unset) |
 | `LOG_LEVEL` | Verbosity of logs (`info` or `debug`) | `debug` | `info` | No |
 | `POST_WEBHOOK_URL` | URL to call with a POST after successful backup | `https://example.com/hook` | None | No |
-| `ENCRYPTION_KEY` | If set, encrypt backups before upload. Required to restore encrypted backups. | `your-strong-passphrase` | None | No (required to restore encrypted backups) |
+| `ENCRYPTION_KEY` | If set, encrypt backups before upload. Required to restore encrypted backups. | `your-strong-passphrase`. Create with `openssl rand -base64 32` | None | No (required to restore encrypted backups) |
 
 
 ## Docker Compose

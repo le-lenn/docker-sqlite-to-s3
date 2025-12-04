@@ -23,6 +23,4 @@ chmod u+x /usr/local/bin/go-cron
 rm -f /tmp/go-cron.tgz
 
 # Cleanup
-apk del curl || true
 rm -rf /var/cache/apk/*
-

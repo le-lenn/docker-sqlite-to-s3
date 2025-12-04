@@ -69,7 +69,11 @@ fi
 # Optional: webhook after successful backup
 if [ -n "${POST_WEBHOOK_URL:-}" ]; then
   echo "Triggering POST webhook: ${POST_WEBHOOK_URL}"
-  curl -fsSL -X POST "${POST_WEBHOOK_URL}" >/dev/null 2>&1 || echo "Webhook trigger failed"
+  if [ "${LOG_LEVEL}" = "debug" ]; then
+    curl -fsS -X POST "${POST_WEBHOOK_URL}" || echo "Webhook trigger failed"
+  else
+    curl -fsSL -X POST "${POST_WEBHOOK_URL}" >/dev/null 2>&1 || echo "Webhook trigger failed"
+  fi
 fi
 
 # Cleanup local temp files
