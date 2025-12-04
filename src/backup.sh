@@ -16,7 +16,8 @@ log_debug "Temporary BACKUP_PATH=${BACKUP_PATH}"
 if [ -e "${DATABASE_PATH}" ]; then
   log_debug "Database file exists at ${DATABASE_PATH}"
 else
-  log_debug "Database file does not exist at ${DATABASE_PATH} (sqlite3 will create/operate accordingly)"
+  echo "Database file does not exist at ${DATABASE_PATH}. Aborting backup."
+  exit 1
 fi
 
 echo "Backing up $DATABASE_PATH to temporary file..."
