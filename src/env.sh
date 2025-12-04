@@ -26,6 +26,18 @@ else
   S3_PREFIX=""
 fi
 
+# Logging: allow opt-in verbose output for troubleshooting
+# Accepted values: "info" (default) or "debug"
+LOG_LEVEL="${LOG_LEVEL:-info}"
+
+# Debug logger helper
+log_debug() {
+  if [ "${LOG_LEVEL}" = "debug" ]; then
+    # shellcheck disable=SC2145
+    echo "[debug] $@"
+  fi
+}
+
 # Optional: S3-compatible endpoint override for aws-cli
 if [ -z "${S3_ENDPOINT:-}" ]; then
   aws_args=""
@@ -54,3 +66,19 @@ is_encrypted_file() {
   [ -f "$file" ] || return 1
   head -c 8 "$file" 2>/dev/null | grep -q '^Salted__$' 2>/dev/null
 }
+
+# Emit environment context in debug mode to help with path issues
+if [ "${LOG_LEVEL}" = "debug" ]; then
+  log_debug "LOG_LEVEL=${LOG_LEVEL}"
+  log_debug "DATABASE_PATH=${DATABASE_PATH}"
+  log_debug "BACKUP_PATH=${BACKUP_PATH}"
+  log_debug "S3_BUCKET=${S3_BUCKET}"
+  log_debug "S3_PREFIX=${S3_PREFIX}"
+  if [ -n "${S3_ENDPOINT:-}" ]; then
+    log_debug "S3_ENDPOINT=${S3_ENDPOINT}"
+  fi
+  if [ -n "${AWS_DEFAULT_REGION:-}" ]; then
+    log_debug "AWS_DEFAULT_REGION=${AWS_DEFAULT_REGION}"
+  fi
+  log_debug "SQLITE_TIMEOUT_MS=${SQLITE_TIMEOUT_MS}"
+fi

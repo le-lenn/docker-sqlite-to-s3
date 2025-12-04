@@ -19,6 +19,7 @@ SQLite backup utility which backups your sqlite to S3. All configurable via envi
 | `S3_ENDPOINT` | URL to S3-compatible endpoint (MinIO, Cloudflare R2, Wasabi) | `https://play.minio.com:9000` | None | No |
 | `SQLITE_TIMEOUT_MS` | Busy timeout used by SQLite `.backup`/`.restore` (milliseconds) | `10000` | `10000` | No |
 | `SCHEDULE` | Cron expression for scheduled backups | `0 1 * * *` | None | No (runs immediately if unset) |
+| `LOG_LEVEL` | Verbosity of logs (`info` or `debug`) | `debug` | `info` | No |
 | `POST_WEBHOOK_URL` | URL to call with a POST after successful backup | `https://example.com/hook` | None | No |
 | `ENCRYPTION_KEY` | If set, encrypt backups before upload. Required to restore encrypted backups. | `your-strong-passphrase` | None | No (required to restore encrypted backups) |
 
@@ -63,6 +64,7 @@ services:
       # DATABASE_PATH: /data/yourdb.sqlite
       # Optional: encrypt backups before upload
       # ENCRYPTION_KEY: your-strong-passphrase
+      # LOG_LEVEL=info
     restart: unless-stopped
     depends_on:
       - app
