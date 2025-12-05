@@ -21,17 +21,8 @@ SQLite backup utility which backups your sqlite to S3. All configurable via envi
 | `SCHEDULE` | Cron expression for scheduled backups | `0 1 * * *` | None | No (runs immediately if unset) |
 | `LOG_LEVEL` | Verbosity of logs (`info` or `debug`) | `debug` | `info` | No |
 | `POST_WEBHOOK_URL` | URL to call with a POST after successful backup | `https://example.com/hook` | None | No |
-| `AGE_PASSPHRASE` | Passphrase for Age passphrase mode (encrypt/decrypt) | `your-strong-passphrase` | None | Yes |
+| `ENCRYPTION_KEY` | If set, encrypt backups before upload. Required to restore encrypted backups. | `your-strong-passphrase`. Create with `openssl rand -base64 32` | None | No (required to restore encrypted backups) |
 
-Generate a strong passphrase (recommend ≥ 48 random bytes, base64-encoded):
-
-```sh
-# macOS/Linux (OpenSSL available)
-openssl rand -base64 48
-
-# macOS/Linux (no OpenSSL)
-head -c 48 /dev/urandom | base64
-```
 
 ## Docker Compose
 
@@ -71,8 +62,8 @@ services:
       # POST_WEBHOOK_URL: https://example.com/myhook
       # Optional: set if your DB is not at the default path
       # DATABASE_PATH: /data/yourdb.sqlite
-      # Encryption (required): passphrase mode only
-      AGE_PASSPHRASE: your-strong-passphrase
+      # Optional: encrypt backups before upload
+      # ENCRYPTION_KEY: your-strong-passphrase
       # LOG_LEVEL=info
     restart: unless-stopped
     depends_on:

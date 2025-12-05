@@ -5,7 +5,8 @@ set -o pipefail
 
 apk update
 
-apk add --no-cache sqlite aws-cli age curl ca-certificates
+# Core tools: sqlite, aws cli, openssl for encryption, curl for webhook/go-cron fetch
+apk add --no-cache sqlite aws-cli openssl curl ca-certificates
 
 # Install go-cron like the postgres project
 ARCH="${TARGETARCH:-amd64}"

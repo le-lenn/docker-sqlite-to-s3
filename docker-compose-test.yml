@@ -39,7 +39,7 @@ services:
       # Optional: if using an S3-compatible provider (MinIO, Cloudflare R2, Wasabi)
       S3_ENDPOINT: http://minio:9000
       AWS_DEFAULT_REGION: us-west-2
-      AGE_PASSPHRASE: test-passphrase
+      ENCRYPTION_KEY: your-32-char-encryption-key-here
       # Optional: tune backup/restore busy timeout (ms), default 10000
       # SQLITE_TIMEOUT_MS: 10000
       # Optional: notify another service when a backup completes

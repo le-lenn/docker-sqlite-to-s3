@@ -23,14 +23,14 @@ fi
 file_key=""
 if [ $# -ge 1 ] && [ -n "$1" ]; then
   ts="$1"
-  file_key="${ts}.age"
+  file_key="${ts}.bak"
   log_debug "Using specified timestamp: ${ts} (key=${file_key})"
 else
   echo "Finding latest backup in $s3_uri_base..."
   # List objects under the prefix, sort and pick the last (newest)
   file_key=$(aws $aws_args s3 ls "$s3_uri_base" \
     | awk '{print $4}' \
-    | grep -E '\.age$' \
+    | grep -E '\.bak$' \
     | sort \
     | tail -n 1)
   if [ -z "$file_key" ]; then
@@ -48,18 +48,23 @@ rm -f "$tmp_file" "$tmp_file.decrypted" 2>/dev/null || true
 aws $aws_args s3 cp "${s3_uri_base}${file_key}" "$tmp_file"
 log_debug "Downloaded to ${tmp_file}"
 
-echo "Decrypting backup with age (passphrase)..."
-RESTORE_SOURCE="${tmp_file}.decrypted"
-if [ -n "${AGE_PASSPHRASE:-}" ]; then
-  if printf '%s\n' "$AGE_PASSPHRASE" | age -d -p -o "$RESTORE_SOURCE" "$tmp_file"; then
-    log_debug "Age passphrase decryption succeeded; restore source=${RESTORE_SOURCE}"
+# If the file is encrypted (OpenSSL salted), require ENCRYPTION_KEY and decrypt
+RESTORE_SOURCE="$tmp_file"
+if is_encrypted_file "$tmp_file"; then
+  echo "Downloaded backup appears to be encrypted."
+  if [ -z "${ENCRYPTION_KEY:-}" ]; then
+    echo "Error: ENCRYPTION_KEY must be set to restore encrypted backups."
+    exit 1
+  fi
+  if openssl enc -d -aes-256-cbc -pbkdf2 -iter 100000 -pass env:ENCRYPTION_KEY -in "$tmp_file" -out "${tmp_file}.decrypted"; then
+    RESTORE_SOURCE="${tmp_file}.decrypted"
+    log_debug "Decryption succeeded; restore source=${RESTORE_SOURCE}"
   else
-    echo "Age decryption failed"
+    echo "Decryption failed"
     exit 1
   fi
 else
-  echo "You must set AGE_PASSPHRASE to restore backups."
-  exit 1
+  log_debug "File is not encrypted; restore source=${RESTORE_SOURCE}"
 fi
 
 echo "Restoring database at $DATABASE_PATH ..."
