@@ -33,24 +33,27 @@ then
   exit 1
 fi
 
-# Optional: encrypt before upload
-UPLOAD_SOURCE="$BACKUP_PATH"
-if [ -n "${ENCRYPTION_KEY:-}" ]; then
-  echo "Encrypting backup before upload..."
-  if openssl enc -aes-256-cbc -pbkdf2 -salt -iter 100000 -pass env:ENCRYPTION_KEY -in "$BACKUP_PATH" -out "${BACKUP_PATH}.enc"; then
-    UPLOAD_SOURCE="${BACKUP_PATH}.enc"
+echo "Encrypting backup with age (passphrase) before upload..."
+UPLOAD_SOURCE="${BACKUP_PATH}.age"
+if [ -n "${AGE_PASSPHRASE:-}" ]; then
+  if {
+    printf '%s\n' "$AGE_PASSPHRASE";
+    printf '%s\n' "$AGE_PASSPHRASE";
+  } | age -p -o "$UPLOAD_SOURCE" "$BACKUP_PATH"; then
     rm -f "$BACKUP_PATH"
-    log_debug "Encryption succeeded; upload source=${UPLOAD_SOURCE}"
+    log_debug "Age passphrase encryption succeeded; upload source=${UPLOAD_SOURCE}"
   else
-    echo "Encryption failed"
-    rm -f "${BACKUP_PATH}.enc" || true
+    echo "Age encryption failed"
+    rm -f "$UPLOAD_SOURCE" || true
     exit 1
   fi
 else
-  log_debug "Encryption disabled; upload source=${UPLOAD_SOURCE}"
+  echo "You must set AGE_PASSPHRASE for encryption."
+  rm -f "$BACKUP_PATH" || true
+  exit 1
 fi
 
-s3_uri="s3://${S3_BUCKET}/${S3_PREFIX}${timestamp}.bak"
+s3_uri="s3://${S3_BUCKET}/${S3_PREFIX}${timestamp}.age"
 
 log_debug "AWS CLI args: ${aws_args}"
 if [ -n "${S3_ENDPOINT:-}" ]; then
@@ -77,7 +80,7 @@ if [ -n "${POST_WEBHOOK_URL:-}" ]; then
 fi
 
 # Cleanup local temp files
-rm -f "$BACKUP_PATH" "${BACKUP_PATH}.enc" 2>/dev/null || true
+rm -f "$BACKUP_PATH" "$UPLOAD_SOURCE" 2>/dev/null || true
 
 echo "Backup complete."
 

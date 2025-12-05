@@ -60,13 +60,6 @@ fi
 BACKUP_PATH="${BACKUP_PATH:-${DATABASE_PATH}.bak}"
 SQLITE_TIMEOUT_MS="${SQLITE_TIMEOUT_MS:-10000}"
 
-# Helper: check if a file has the OpenSSL salted header (our encryption format)
-is_encrypted_file() {
-  file="$1"
-  [ -f "$file" ] || return 1
-  head -c 8 "$file" 2>/dev/null | grep -q '^Salted__$' 2>/dev/null
-}
-
 # Emit environment context in debug mode to help with path issues
 if [ "${LOG_LEVEL}" = "debug" ]; then
   log_debug "LOG_LEVEL=${LOG_LEVEL}"
